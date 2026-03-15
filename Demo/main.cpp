@@ -8,7 +8,68 @@
 #include <SDL2_gfxPrimitives.h>
 
 
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <string>
+
+#include <cJSON.h>
+
+void test_json() {
+	std::ifstream file("test.json"); // input file stream
+	
+	if (!file.good()){
+		std::cout << "Failed to open file: test.json" << std::endl;
+		return;
+	}
+
+	std::stringstream str_stream;
+	str_stream << file.rdbuf(); // read the file into a stringstream  // 注意时一口气读入整个文件，而不是一行一行地读入
+	file.close();
+
+	cJSON* json_root = cJSON_Parse(str_stream.str().c_str());
+	// parse the JSON string
+
+	cJSON* json_name = cJSON_GetObjectItem(json_root, "name");
+	cJSON* json_age = cJSON_GetObjectItem(json_root, "Age");
+	cJSON* json_pets = cJSON_GetObjectItem(json_root, "pets");
+
+	std::cout << json_name->string << ":" << json_name->valuestring << std::endl;
+	std::cout << json_age->string << ":" << json_age->valueint << std::endl;
+	// string 表示键的名称， valuestring, valueint表示具体的实例
+
+	std::cout << json_pets->string << ":" << std::endl;
+	cJSON* json_item = nullptr;
+	cJSON_ArrayForEach(json_item, json_pets) {
+		std::cout << "\t" << json_item->valuestring << std::endl;
+	}
+
+}
+
+void test_csv() {
+	std::ifstream file("test.csv");
+	if (!file.good()) {
+		std::cout << "Failed to open file: test.csv" << std::endl;
+		return;
+	}
+
+	std::string str_line;
+	while (std::getline(file, str_line)) {
+		std::string str_grid;
+		std::stringstream str_stream(str_line);
+		while (std::getline(str_stream, str_grid, ',')) {
+			std::cout << str_grid << " ";
+		}
+		std::cout << std::endl;
+	}
+
+	file.close();
+}
+
 int main() {
+
+	test_json();
+	test_csv();
 
 	// Initialize SDL, SDL_image, SDL_mixer, and SDL_ttf
 	SDL_Init(SDL_INIT_EVERYTHING);
