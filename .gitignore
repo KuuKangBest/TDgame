@@ -1,2 +1,7 @@
 # Visual Studio directories
-**/.vs/
+.vs
+.vscode
+Release
+*.log
+*.obj
+*.tlog
