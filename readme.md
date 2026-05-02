@@ -245,3 +245,164 @@ int main(int argc, char ** argv) {
 **地图配置**：瓦片地图数据不仅可以存储不同层级上的**渲染**，还可以存储**逻辑**信息：比如怪物行进路线、怪物生成点之类的逻辑信息，在内存空间中划分好位置即可（也可以用斜线分开（读取有利））
 
 ### 2026.5.2 瓦片地图数据功能实现
+
+小插曲：才知道这具体表示什么意思
+
+```c++
+#ifndef _TILE_H_  // if not define
+#define _TILE_H_  // define
+#endif   		  // end define
+```
+
+#### tile类实现
+
+```c++
+-------tile.h--------
+
+struct Tile {
+	enum class Direction {
+		None = 0,
+		Left,
+		Right,
+		Up,
+		Down
+	};
+
+	int terrian = 0; // 地图
+	int decoration = -1; // 地图上有无装饰
+	Direction direction = Direction::None; // 方向
+	int special_tag;
+
+
+	// 运行时
+	bool has_tower = false;
+};
+
+typedef std::vector<std::vector<Tile>> TileMap;
+```
+
+#### Map类数据加载
+
+这里主要是练习csv的数据加载流程
+
+请一定要注意src是流式，不管是 `fstream` 还是 `sstream` 都要先变成流式
+
+先**成功**打开文件，直接按照行切分`getline(src, dst)`，空行直接跳过。若不是空行则去掉开头结尾的空格等
+
+接下来还是要继续使用 `getline()`函数，只不过新增字符串表示间隔字符（之前默认间隔字符为 `\n`）
+
+先用 `,` 做分割，得到单个tile的可能数据，然后再用单独的函数处理，用 `\\` 做分割——注意这里细致一点，对各种错误情况做适当的处理
+
+以上所有都先存到 `tile_map_temp` 中，只有等到都确定成功了才考虑放入真正的地图中
+
+```c++
+-------map.h--------
+#include <tile.h>
+
+private:
+	TileMap tile_map;
+
+
+public:
+	bool load(const string& path) {
+		fstream file(path);
+
+		if (!file.good()) return false;
+
+
+		TileMap tile_map_temp;
+		int idx_x = -1, idx_y = -1;
+
+		string str_line;
+		while (getline(file, str_line)) {
+			str_line = trim_str(str_line);
+
+			if (str_line.empty()) continue; // 这一行是空的
+	
+			// 运行到这说明这一行是有数据的，则需要在TileMap中新增一行
+			idx_x = -1, idx_y++;
+			tile_map_temp.emplace_back();
+
+			string str_file;
+			stringstream str_stream(str_line);
+			while(getline(str_stream, str_file, ',')) 
+			{
+				idx_x++;
+				tile_map_temp[idx_y].emplace_back();
+	
+				Tile& tile = tile_map_temp[idx_y].back();
+				load_tile_from_string(tile, str_file);
+			}
+
+
+		}
+
+		file.close();
+
+
+		// 如果一开始地图是空的，也会有问题，会越界
+		if (tile_map_temp.empty() || tile_map_temp[0].empty())
+		return false;
+	
+		tile_map = tile_map_temp;
+		return true;
+	}
+
+
+private: // 一些类内的辅助方法
+	string trim_str(const string& str) {
+		// function: 删除开头和结尾的空格等占位符
+		
+		
+		size_t begin = str.find_first_not_of(" \t");
+		// 找第一个不是" \t"的字符
+
+		if (begin == string::npos) return " ";// npos = -1, meaning no position
+	
+		size_t end = str.find_last_not_of(" \t");
+		size_t length = end - begin + 1;
+
+		return str.substr(begin, length);
+	}
+```
+
+#### 地图缓存生成
+
+其实缓存的本质就是用一次遍历去换后续游戏的多次遍历。地图上所存储的家（塔防游戏怪物的目的地）如果每次都要遍历性能一定降低，所以说先遍历一次并且存储
+
+```c++
+-------map.h--------
+    
+    
+private:
+	SDL_Point idx_home = { 0 };
+
+	void generate_map_cache() {
+		// 其实就是一次遍历，只不过先存起来
+		for (int y = 0; y < get_height(); y++) {
+			for (int x = 0; x < get_width(); x++) {
+				const Tile& tile = tile_map[y][x];
+				if (tile.special_tag < 0)
+					continue;
+
+				if (tile.special_tag == 0) {
+					idx_home.x = x;
+					idx_home.y = y;
+				} // 之后还可以做其他缓存
+			}
+		}
+	}
+
+public:
+	size_t get_width() const{ // const表示对类内不会修改
+		if (tile_map.empty()) // 如果不做这一步操作，程序运行中可能会出错
+			return 0;
+		return tile_map[0].size();
+	}
+	
+	size_t get_height() const {
+		return tile_map.size();
+	}
+
+```
+

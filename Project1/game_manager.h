@@ -111,6 +111,10 @@ private:
 	void on_input() { // 不用传参数，可以直接获得manager内的 event参数
 		// 获取事件等的输入处理
 
+		if (event.type == SDL_QUIT) {
+			is_quit = true;
+		}
+
 	}
 
 	void on_update(double delta) {
