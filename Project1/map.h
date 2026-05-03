@@ -7,10 +7,17 @@
 #include <sstream>
 #include <vector>
 #include <SDL.h>
+#include <unordered_map>
+#include "route.h"
 
 using namespace std;
 
 class Map {
+
+public:
+	typedef unordered_map<int, Route> SpawnRoutePool;
+
+
 public:
 	Map() = default;
 	~Map() = default;
@@ -56,6 +63,7 @@ public:
 			return false;
 
 		tile_map = tile_map_temp;
+		generate_map_cache();
 		return true;
 	}
 
@@ -75,6 +83,8 @@ private:
 	// 缓存相关（不是每次都去遍历，提前遍历一次）
 	// 塔防游戏中的家在哪应该只需要遍历一次
 	SDL_Point idx_home = { 0 };
+
+	SpawnRoutePool spawn_route_pool;
 
 private:
 	string trim_str(const string& str) {
@@ -130,6 +140,9 @@ private:
 					idx_home.x = x;
 					idx_home.y = y;
 				} // 之后还可以做其他缓存
+				else {
+					spawn_route_pool[tile.special_tag] = Route(tile_map, {x, y});
+				}
 			}
 		}
 	}

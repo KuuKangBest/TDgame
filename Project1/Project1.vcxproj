@@ -137,6 +137,7 @@
     <ClInclude Include="game_manager.h" />
     <ClInclude Include="manager.h" />
     <ClInclude Include="map.h" />
+    <ClInclude Include="route.h" />
     <ClInclude Include="tile.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

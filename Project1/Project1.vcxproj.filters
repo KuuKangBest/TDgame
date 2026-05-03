@@ -35,5 +35,8 @@
     <ClInclude Include="map.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="route.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

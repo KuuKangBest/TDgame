@@ -3,7 +3,7 @@
 ## 目录
 
 - [程序库总览和游戏框架搭建](#程序库总览和游戏框架搭建)
-  - [2026.4.20 之前 SDL相关库、JSON与CSV格式解析](#2026420之前-sdl相关库json与csv格式解析)
+  - [2026.4.20之前 SDL相关库、JSON与CSV格式解析](#2026420之前-sdl相关库json与csv格式解析)
   - [2026.4.20 可继承单例模板类实践](#2026420-可继承单例模板类实践)
   - [2026.4.29 GameManager的主体实现框架](#2026429-gamemanager的主体实现框架)
     - [初始化与初始化断言](#初始化与初始化断言)
@@ -11,8 +11,11 @@
     - [游戏退出逻辑](#游戏退出逻辑)
   - [2026.5.1 配置数据的设计思路](#202651-配置数据的设计思路)
   - [2026.5.2 瓦片地图数据功能实现](#202652-瓦片地图数据功能实现)
-
-
+    - [tile类实现](#tile类实现)
+    - [Map类数据加载](#map类数据加载)
+    - [地图缓存生成](#地图缓存生成)
+- [游戏主体内容开发](#游戏主体内容开发)
+  - [2026.5.3 洋流图与预烘焙寻路实现](#202653-洋流图与预烘焙寻路实现)
 
 
 
@@ -406,3 +409,108 @@ public:
 
 ```
 
+
+
+
+
+## 游戏主体内容开发
+
+### 2026.5.3 洋流图与预烘焙寻路实现
+
+洋流图在这个项目中就是指敌人的行进路线（预先生成好的地图向量场设计），塔防游戏中一般不会用A*算法之类的算法而是用预先定义好的洋流图进行寻路（流场寻路）
+
+本节是基于上一节的地图缓存生成的，具体来说新增一个缓存，是一个出生点int型index和对应路径的一个map（哈希表）
+
+```c++
+if (tile.special_tag < 0)
+	continue;
+
+if (tile.special_tag == 0) {
+	idx_home.x = x;
+	idx_home.y = y;
+} // 之后还可以做其他缓存
+else {
+	spawn_route_pool[tile.special_tag] = Route(tile_map, {x, y});
+}
+
+
+public:
+	typedef unordered_map<int, Route> SpawnRoutePool;
+private:
+	SpawnRoutePool spawn_route_pool;
+```
+
+接下来有关 `Route()` 具体实现在 `Route.h` 中
+
+```c++
+#ifndef _ROUTE_H_
+#define _ROUTE_H_
+
+#include "tile.h"
+#include <vector>
+#include <SDL.h>
+
+using namespace std;
+
+class Route {
+
+public:
+	typedef vector<SDL_Point> IdxList;
+
+
+public:
+	Route() = default;
+	~Route() = default;
+
+	Route(const TileMap& tilemap, SDL_Point idx_start) {
+		// 表示从 idx_start 的idx开始的路径生成
+		size_t width = tilemap[0].size();
+		size_t height = tilemap.size();
+		SDL_Point idx_next = idx_start;
+
+		while (true) {
+			// 超出屏幕边界
+			if (idx_next.x >= width || idx_next.y >= height)
+				break;
+
+			// 有无环路
+			if (check_is_duplicate(idx_next))
+				break;
+
+			idx_list.push_back(idx_next);
+			// 终止条件
+			// 终止条件1：当前idx_next已经到达目的地
+			const Tile& tile = tilemap[idx_next.y][idx_next.x];
+			if (tile.special_tag == 0)
+				break;
+			
+			// 终止条件2：当前idx_next没有方向
+			// 不终止：更新idx_next
+			bool has_direction = true;
+			switch (tile.direction)
+			{
+				case Tile::Direction::Up:
+					...
+				case Tile::Direction::None:
+					has_direction = false;
+					break;
+			}
+			if (!has_direction)
+				break;
+
+		}
+	}
+
+	const IdxList& get_idx_list() const{
+		return idx_list;
+	}
+private:
+	IdxList idx_list;
+
+private:
+	bool check_is_duplicate(const SDL_Point& idx_target){} // 遍历数组即可
+		// 有重复则返回 true，否则返回false
+};
+
+#endif
+```
