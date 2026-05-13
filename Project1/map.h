@@ -77,6 +77,22 @@ public:
 		return tile_map.size();
 	}
 
+	const TileMap& get_tile_map() const{
+		return tile_map;
+	}
+
+	const SDL_Point& get_idx_home() const {
+		return idx_home;
+	}
+
+	const SpawnRoutePool& get_spawn_route_pool() const {
+		return spawn_route_pool;
+	}
+
+	void place_tower(const SDL_Point& idx_tile) {
+		tile_map[idx_tile.y][idx_tile.x].has_tower = true;
+	}
+
 private:
 	TileMap tile_map;
 
