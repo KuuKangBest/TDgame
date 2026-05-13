@@ -16,6 +16,10 @@
     - [地图缓存生成](#地图缓存生成)
 - [游戏主体内容开发](#游戏主体内容开发)
   - [2026.5.3 洋流图与预烘焙寻路实现](#202653-洋流图与预烘焙寻路实现)
+  - [2026.5.9 ConfigManager游戏配置管理器实现](#202659-configmanager游戏配置管理器实现)
+    - [Map类更多接口](#map类更多接口)
+    - [配置器类](#配置器类)
+  - [2026.5.13 关卡配置数据加载](#2026513-关卡配置数据加载)
 
 
 
@@ -514,3 +518,141 @@ private:
 
 #endif
 ```
+
+
+
+### 2026.5.9 ConfigManager游戏配置管理器实现
+
+#### Map类更多接口
+
+`Map` 类需要有暴露给外界自己的私有成员的需求，并且放置防御塔后需要更新自己私有成员内的tile_map中对应idx的tile中的has_tower参数：
+
+```cpp
+const TileMap& get_tile_map() const;
+const SDL_Point& get_idx_home() const;
+const SpawnRoutePool& get_spawn_route_pool() const;
+
+void place_tower(const SDL_Point& idx_tile) {
+	tile_map[idx_tile.y][idx_tile.x].has_tower = true;
+}
+```
+
+#### 配置器类
+
+配置器类只需要根据配置文件的结构进行相应字段的添加与初始化即可（加载后面再进行）。跟游戏玩法和配置文件结构强相关
+
+### 2026.5.13 关卡配置数据加载
+
+使用 cJSON 读取配置文件的整体思路：**第一步检查**（文件→内存→JSON合法性）、**第二步解析**（逐字段解析，默认值兜底，空容器回退）。
+
+第一步的核心：每一步都必须验证，验证失败立即清理资源并返回（`cJSON_Delete` 删指针）。
+
+第二步的核心：有默认值的字段没扫到不用 `continue`，但容器类字段（如数组）如果为空则必须做回退处理（删除之前预留的空间）。
+
+```cpp
+-------config_manager.h--------
+
+bool load_level_config(const string& path) {
+    // ===== 第一步：检查 =====
+    
+    ifstream file(path);
+    if (!file.good()) {  // 检查文件是否成功打开
+        return false;
+    }
+     
+    stringstream buffer;
+    buffer << file.rdbuf();  // 读入内存（流式）
+    file.close();            // 读到内存后就可以关闭文件了，养成好习惯
+
+    cJSON* json_root = cJSON_Parse(buffer.str().c_str());  // strstream → c_str → cJSON
+    
+    if (!json_root) {  // 检查 json_root 是否存在
+        cerr << "Failed to parse config file: " << path << endl;
+        return false;
+    } 
+    if (json_root->type != cJSON_Array) {  // 检查是否为期待的数组类型
+        cerr << "Config file is not an array: " << path << endl;
+        cJSON_Delete(json_root);  // 不合法就直接删掉，防止内存泄漏
+        return false;
+    }
+
+    
+    
+    
+    
+    
+    // ===== 第二步：解析 =====
+    
+    cJSON* json_wave = nullptr;
+    cJSON_ArrayForEach(json_wave, json_root) {
+        if (json_wave->type != cJSON_Object) {
+            cout << "Invalid wave config, expected an object." << endl;
+            continue;  // 类型不对，跳过这个结点
+        }
+
+        wave_list.emplace_back();  // 检查通过后才创建 C++ 对象
+        Wave& wave = wave_list.back();
+
+        // 判断模式：if (json_item && json_item->type == 期待类型)，缺一不可
+        // 有默认值的字段 —— 找不到或类型不对就以默认值为准，不需要 continue
+        
+        cJSON* json_wave_interval = cJSON_GetObjectItem(json_wave, "interval");
+        if (json_wave_interval && json_wave_interval->type == cJSON_Number) {
+            wave.interval = json_wave_interval->valuedouble;
+        }
+
+        cJSON* json_wave_rewards = cJSON_GetObjectItem(json_wave, "rewards");
+        if (json_wave_rewards && json_wave_rewards->type == cJSON_Number) {
+            wave.rewards = json_wave_rewards->valuedouble;
+        }
+
+        // 容器类字段 —— 必须检查是否为空，为空则回退
+        cJSON* json_wave_spawn_events = cJSON_GetObjectItem(json_wave, "spawn_list");
+        if (json_wave_spawn_events && json_wave_spawn_events->type == cJSON_Array) {
+            cJSON* json_spawn_event = nullptr;
+            cJSON_ArrayForEach(json_spawn_event, json_wave_spawn_events) {
+                if (json_spawn_event->type != cJSON_Object) {
+                    cout << "Invalid spawn event config, expected an object." << endl;
+                    continue;
+                }
+                Wave::SpawnEvent spawn_event;  // 用默认值初始化，后续只覆盖找到的字段
+
+                cJSON* json_spawn_interval = cJSON_GetObjectItem(json_spawn_event, "interval");
+                if (json_spawn_interval && json_spawn_interval->type == cJSON_Number) {
+                    spawn_event.interval = json_spawn_interval->valuedouble;
+                }
+				...
+
+                // 字符串到枚举的映射，都不匹配则以默认值 Slim 为准
+                cJSON* json_enemy_type = cJSON_GetObjectItem(json_spawn_event, "enemy_type");
+                if (json_enemy_type && json_enemy_type->type == cJSON_String) {
+                    string enemy_type_str = json_enemy_type->valuestring;
+                    if (enemy_type_str == "Slim") {
+                        spawn_event.enemy_type = EnemyType::Slim;
+                    } else if ...
+                }
+                wave.spawn_event_list.push_back(spawn_event);
+            }
+
+            // ★ 核心：如果一个 spawn_event 都没有，这个 wave 就没意义了
+            if (wave.spawn_event_list.empty())
+                wave_list.pop_back();  // 删除之前预留的空间，interval 等也随之丢弃
+        }
+    }
+
+    // ===== 收尾 =====
+    cJSON_Delete(json_root);  // 解析完毕，释放 JSON 内存
+
+    if (wave_list.empty()) {
+        cout << "Warning: No valid wave config found in file: " << path << endl;
+        return false;
+    }
+    return true;
+}
+```
+
+关键点再强调一下：
+
+- **默认值兜底**：结构体成员已有默认值（如 `interval = 0`, `spawn_point = 1`, `enemy_type = EnemyType::Slim`），JSON 中找不到或类型不对直接跳过即可，不需要 `continue`。
+- **空容器必须回退**：`spawn_list` 数组如果一条 `spawn_event` 都没解析成功，必须 `pop_back()` 把前面 `emplace_back()` 预留的 wave 删掉，否则会留下一个没有生成事件的空壳 wave。
+- **cJSON 指针手动管理**：`cJSON_Parse` 返回的指针不用时必须 `cJSON_Delete`，否则内存泄漏。类型不匹配时记得先删再 `return`。
