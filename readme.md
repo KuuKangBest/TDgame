@@ -20,6 +20,7 @@
     - [Map类更多接口](#map类更多接口)
     - [配置器类](#配置器类)
   - [2026.5.13 关卡配置数据加载](#2026513-关卡配置数据加载)
+  - [2026.5.13 游戏配置加载](#2026513-游戏配置加载)
 
 
 
@@ -656,3 +657,82 @@ bool load_level_config(const string& path) {
 - **默认值兜底**：结构体成员已有默认值（如 `interval = 0`, `spawn_point = 1`, `enemy_type = EnemyType::Slim`），JSON 中找不到或类型不对直接跳过即可，不需要 `continue`。
 - **空容器必须回退**：`spawn_list` 数组如果一条 `spawn_event` 都没解析成功，必须 `pop_back()` 把前面 `emplace_back()` 预留的 wave 删掉，否则会留下一个没有生成事件的空壳 wave。
 - **cJSON 指针手动管理**：`cJSON_Parse` 返回的指针不用时必须 `cJSON_Delete`，否则内存泄漏。类型不匹配时记得先删再 `return`。
+
+### 2026.5.13 游戏配置加载
+
+大致的思路与上一节保持一样，但现在enemy是一个模板完全可以写一个函数来进行加载
+
+```cpp
+public:
+	bool load_game_config(const string& path) {
+		
+        ... // 各种检查
+            
+		// 同层级下一遍获取
+		cJSON* json_basic = cJSON_GetObjectItem(json_root, "basic");
+		cJSON* json_player = cJSON_GetObjectItem(json_root, "player");
+		cJSON* json_tower = cJSON_GetObjectItem(json_root, "tower");
+		cJSON* json_enemy = cJSON_GetObjectItem(json_root, "enemy");
+
+		... // 获取之后一边检查即可
+
+		parse_basic_template(basic_template, json_basic);
+		
+		parse_player_template(player_template, json_player);
+	
+		parse_tower_template(archer_template, cJSON_GetObjectItem(json_tower, "archer"));
+		parse_tower_template(axeman_template, cJSON_GetObjectItem(json_tower, "axeman"));
+		...
+
+		parse_enemy_template(slim_template, cJSON_GetObjectItem(json_enemy, "Slim"));
+		...
+
+		cJSON_Delete(json_root);
+		return true;
+}
+```
+
+```cpp
+private:
+	void parse_number_array(double* arr, int max_len, cJSON* json_root){
+		if(!json_root || json_root->type != cJSON_Array){
+			return;
+		}
+		int idx = -1; // 数组索引，初始值为-1，因为数组从0开始索引
+		cJSON* json_item = nullptr;
+		cJSON_ArrayForEach(json_item, json_root){
+			idx++;	
+			if(json_item->type == cJSON_Number){
+				if(idx < max_len){
+					arr[idx] = json_item->valuedouble;
+				}
+				else{
+					break; // 超出数组长度了，后面的就不处理了
+				}
+			}
+		}
+	}
+
+	bool parse_tower_template(TowerTemplate& tower_template, cJSON* json_tower) {
+		if(!json_tower || json_tower->type != cJSON_Object){
+			cJSON_Delete(json_tower);
+			return false;
+		}
+
+		cJSON* json_interval = cJSON_GetObjectItem(json_tower, "interval");
+		cJSON* json_damage = cJSON_GetObjectItem(json_tower, "damage");
+		cJSON* json_view_range = cJSON_GetObjectItem(json_tower, "view_range");
+		cJSON* json_cost = cJSON_GetObjectItem(json_tower, "cost");
+		cJSON* json_upgrade_cost = cJSON_GetObjectItem(json_tower, "upgrade_cost");
+
+		parse_number_array(tower_template.interval, 10, json_interval);
+		parse_number_array(tower_template.damage, 10, json_damage);
+		parse_number_array(tower_template.view_range, 10, json_view_range);
+		parse_number_array(tower_template.cost, 10, json_cost);
+		parse_number_array(tower_template.upgrade_cost, 9, json_upgrade_cost);
+
+		return true;
+	}
+```
+
+其实就是将之前的加载更加模块化了
