@@ -4,6 +4,5 @@
 #include "game_manager.h"
 
 int main(int argc, char ** argv) {
-
 	return GameManager::Instance()->run(argc, argv);
 }

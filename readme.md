@@ -21,6 +21,7 @@
     - [配置器类](#配置器类)
   - [2026.5.13 关卡配置数据加载](#2026513-关卡配置数据加载)
   - [2026.5.13 游戏配置加载](#2026513-游戏配置加载)
+  - [2026.5.14 游戏资源加载管理器](#2026514-游戏资源加载管理器)
 
 
 
@@ -736,3 +737,90 @@ private:
 ```
 
 其实就是将之前的加载更加模块化了
+
+### 2026.5.14 游戏资源加载管理器
+
+将所有的用到的游戏资源进行加载，并且进行存储（使用高效的哈希表的方式，这样可以更快的进行资源的查找）
+
+请注意这个管理器的本质是一个资源池，存放所有需要的资源，为了方便首先对资源取别名进行列举
+
+```cpp
+enum class ResID
+{	
+	// Tex_开头的资源是纹理资源
+	Tex_Tileset,
+	...
+	Tex_SlimeSketch, // Sketch剪影的作用是在敌人被攻击的时候显示一个被攻击的视觉效果，和原来的纹理资源是分开的
+	...
+	Tex_UIPlaceIdle,
+	Tex_UIPlaceHoveredTop, // 这表示高亮上的状态，和Idle状态是分开的
+	Tex_UIPlaceHoveredLeft,
+	Tex_UIPlaceHoveredRight,
+    
+	// Sound_表示音效资源
+	Sound_ArrowFire_1,
+	...
+
+	// Music_表示音乐资源（比如持续播放的背景音乐）
+	Music_BGM,
+	
+	// Font_表示字体资源
+	Font_Main
+};
+```
+
+接下来在类中定义一些有意义的类，一遍存储不同类型的资源：
+
+```cpp
+public:
+	typedef unordered_map<ResID, SDL_Texture*> TexturePool;
+	typedef unordered_map<ResID, Mix_Chunk*> SoundPool;
+	typedef unordered_map<ResID, Mix_Music*> MusicPool;
+	typedef unordered_map<ResID, TTF_Font*> FontPool;
+
+public:
+	const TexturePool& get_texture_pool() const { return texture_pool; }
+	const SoundPool& get_sound_pool() const { return sound_pool; }
+	const MusicPool& get_music_pool() const { return music_pool; }
+	const FontPool& get_font_pool() const { return font_pool; }
+```
+
+最后写上加载函数：
+
+```cpp
+public:
+	bool load_resources(SDL_Renderer* renderer) {
+		// texture:二合一函数（省了转换为SDL_Surface再转成SDL_Texture的步骤）
+		// 直接加载纹理资源，路径是相对于可执行文件的路径
+		texture_pool[ResID::Tex_Tileset] = IMG_LoadTexture(renderer, "resources/tileset.png");
+		...
+        // 哈希表的使用方式：类似于数组下标，只不过下标为去映射的类型
+            
+            
+		for (auto pair : texture_pool) { // 检查资源是否加载失败
+			if (!pair.second)
+				return false;
+		}
+
+		// sound类音效使用Mix_LoadWAV函数加载，这样更便于混音
+		sound_pool[ResID::Sound_ArrowFire_1] = Mix_LoadWAV("resources/sound_arrow_fire_1.mp3");
+		...
+		for (const auto& pair : sound_pool)
+			if (!pair.second) return false;
+
+		// music类用Mix_LoadMUS函数
+		music_pool[ResID::Music_BGM] = Mix_LoadMUS("resources/music_bgm.mp3");
+
+		for (const auto& pair : music_pool)
+			if (!pair.second) return false;
+
+		// ttf字体类用TTF_OpenFont函数，参数是字体文件路径和字体大小
+		font_pool[ResID::Font_Main] = TTF_OpenFont("resources/ipix.ttf", 25);
+
+		for (const auto& pair : font_pool)
+			if (!pair.second) return false;
+
+		return true;
+
+	}
+```

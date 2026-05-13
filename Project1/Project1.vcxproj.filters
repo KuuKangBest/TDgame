@@ -50,5 +50,8 @@
     <ClInclude Include="enemy_type.h">
       <Filter>头文件\enemy</Filter>
     </ClInclude>
+    <ClInclude Include="resources_manager.h">
+      <Filter>头文件\Manager</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
