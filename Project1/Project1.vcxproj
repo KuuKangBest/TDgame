@@ -131,6 +131,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\thirdparty\cJSON-1.7.19\cJSON.c" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>

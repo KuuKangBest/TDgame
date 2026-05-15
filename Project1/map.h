@@ -22,7 +22,7 @@ public:
 	Map() = default;
 	~Map() = default;
 
-	bool load(const string& path) {
+	bool load(const string& path= "map.csv") {
 		fstream file(path);
 
 		if (!file.good()) return false;

@@ -62,7 +62,7 @@ public:
 	bool is_game_win = true;
 	bool is_game_over = false;
 
-	SDL_Rect rect_tile_map = { 0 };
+	SDL_Rect rect_tile_map = { 0 }; // 这个表示地图实际渲染在什么举行当中
 
 	BasicTemplate basic_template;
 	PlayerTemplate player_template;
@@ -83,7 +83,7 @@ public:
 
 public:
 
-	bool load_game_config(const string& path) {
+	bool load_game_config(const string& path = "config.json") {
 		ifstream file(path);
         if(!file.good()){
 			cerr << "Failed to open config file: " << path << endl;
@@ -140,7 +140,7 @@ public:
 	}
 
 
-	bool load_level_config(const string& path) {
+	bool load_level_config(const string& path = "level.json") {
 		ifstream file(path);
 
 

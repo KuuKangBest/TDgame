@@ -19,10 +19,16 @@
     <Filter Include="头文件\enemy">
       <UniqueIdentifier>{a2a608a1-864c-427d-b3d2-f9417fcd342f}</UniqueIdentifier>
     </Filter>
+    <Filter Include="源文件\cJSON">
+      <UniqueIdentifier>{18f6813f-6b13-421a-b4f7-627d67b05dbb}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
       <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="..\thirdparty\cJSON-1.7.19\cJSON.c">
+      <Filter>源文件\cJSON</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

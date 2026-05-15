@@ -22,6 +22,9 @@
   - [2026.5.13 关卡配置数据加载](#2026513-关卡配置数据加载)
   - [2026.5.13 游戏配置加载](#2026513-游戏配置加载)
   - [2026.5.14 游戏资源加载管理器](#2026514-游戏资源加载管理器)
+  - [2026.5.15 瓦片地图渲染实现（重要）](#2026515-瓦片地图渲染实现重要)
+    - [矩形区域确认](#矩形区域确认)
+    - [从资源渲染到地图材质（类似于缓存）](#从资源渲染到地图材质类似于缓存)
 
 
 
@@ -824,3 +827,194 @@ public:
 
 	}
 ```
+
+全部写好之后在 `game_manager.h` 中进行调用，并引入初始化断言：
+
+```cpp
+------game_manager.h-------
+protected:
+	GameManager() {
+		ConfigManager* instance = ConfigManager::Instance();
+
+		init_assert(instance->map.load(), u8"地图加载失败");
+		init_assert(instance->load_game_config(), u8"游戏配置加载失败");
+		init_assert(instance->load_level_config(), u8"关卡配置加载失败");
+
+
+		// 创建游戏窗口
+		window = SDL_CreateWindow(ConfigManager::Instance()->basic_template.window_title.c_str(), ..., ConfigManager::Instance()->basic_template.window_width, ConfigManager::Instance()->basic_template.window_height,...);
+		// 创建时就从已经读进去配置中进行获得就好
+
+		// 先创建渲染器
+		renderer = ...
+        // 创建完渲染器才能引入资源
+		ResourcesManager* resources_manager = ResourcesManager::Instance();
+		init_assert(resources_manager->load_resources(renderer), u8"游戏资源加载失败");
+	}
+```
+
+### 2026.5.15 瓦片地图渲染实现（重要）
+
+renderer本质是一个画笔，为了不影响主游戏界面的渲染，不让主游戏界面进行复杂的逻辑判断，渲染时的函数逐级分层写：渲染地图、渲染角色、...
+
+而地图是一种非常特殊的资源，加载一次之后就不会再改动了，只不过是其上的防御塔信息可能会改变，所以地图加载只用一次即可（不用每次都在 `on_render()` 中去执行，在初始化时执行完一次存储就好）
+
+注意这一步只画出地图的纹理，之后地图渲染就不用复杂逻辑了，直接渲染这一张纹理即可
+
+```cpp
+--------game_manager.h-----------
+protected:
+	GameManager(){
+	   	...
+	 	init_assert(generate_tile_map_texture(), u8"地图纹理生成失败");  	
+	}
+private:
+	SDL_Texture* texture_tile_map = nullptr; // 地图纹理，生成一次后就可以一直用，除非地图发生改变了
+private:
+	bool generate_tile_map_texture();
+```
+
+#### 矩形区域确认
+
+我们在 `ConfigManager` 中定义了一个 `SDL_Rect rect_tile_map;` 但当时没有点名作用：
+
+其代表实际地图在画布（`window`）上的渲染矩形（`SDL_Rect` 标定了第一个像素的 `x `与 `y` 坐标，并且指明渲染矩形的大小（宽 `w`，高 `h`））
+
+```cpp
+---------generate_tile_map_texture();---------
+    const TileMap& tile_map = ConfigManager::Instance()->map.get_tile_map();
+	SDL_Rect& map_rect = ConfigManager::Instance()->rect_tile_map;	//直接用引用更方便
+
+	SDL_Texture* tex_tile_map_set = ResourcesManager::Instance()->get_texture_pool().find(ResID::Tex_Tileset)->second;
+	
+	int width_map_set, height_map_set;
+	SDL_QueryTexture(tex_tile_map_set, nullptr, nullptr, &width_map_set, &height_map_set);
+	//用于加载纹理并且获得其宽高
+	
+	int set_one_line_number = (int)ceil(double(width_map_set)/SIZE_TILE); // 纹理图片中一行有多少个样式的纹理
+
+	int width_map_tex, height_map_tex;
+	width_map_tex = SIZE_TILE *  ConfigManager::Instance()->map.get_width();
+	height_map_tex = SIZE_TILE * ConfigManager::Instance()->map.get_height();
+
+	int x_map_tex = (ConfigManager::Instance()->basic_template.window_width - width_map_tex) / 2;
+	int y_map_tex = (ConfigManager::Instance()->basic_template.window_height - height_map_tex) / 2;
+	// 最终渲染的矩形是位于 window 的中间位置	
+
+	map_rect.x = x_map_tex;
+	map_rect.y = y_map_tex;
+	map_rect.w = width_map_tex;
+	map_rect.h = height_map_tex; // 实际地图在画布上的渲染矩形更新完毕
+```
+
+疑难代码：
+
+第5行：
+
+```cpp 
+ResourcesManager::Instance()->get_texture_pool().find(ResID::Tex_Tileset)->second;
+```
+
+> 注意这里的逻辑，为何不用 `ResourcesManager::Instance()->get_texture_pool()[ResID::Tex_Tileset]`
+> 因为上面注释掉的这个式子不是静态的，也就是如果说找不到键值为ResID::Tex_Tileset的对会创建一个键值对，只要可能有新的键值对的插入就不是一个静态的方法，所以用find函数找到了指向所对应的键值对 `<ResID, SDL_Texture*>` 的指针
+
+第8行是一个加载纹理（资源）的函数，会通过指针将纹理的宽高进行传入
+
+第11行是计算纹理（资源）一行中有多少格的函数，向上取整，纹理图片大致会长这样：
+
+![.\Project1\resources\tileset.png](E:\学习\塔防游戏\Project1\resources\tileset.png)
+
+而地图中的 `terrian` 字段的编号其实就是根据这张图从左到右从上到下进行排布的，所以我们需要知道一排有多少个纹理才能进行定位
+
+后面几行的函数是计算我们的地图纹理图的渲染矩形（包括大小合位置目标是居中渲染）
+
+#### 从资源渲染到地图材质（类似于缓存）
+
+刚才已经知道了具体的生成矩形，接下来我们只需要生成一张完整的地图材质就可以了（不用关注在 `window` 中的偏移）
+
+我们接下来专心从资源进行复杂逻辑判断，渲染到纹理图中
+
+`renderer` 本质就是一个画笔，当它的画笔对象为默认值 `nullptr` 的时候，渲染到 `window` 中，否则渲染到指定的 texture 中
+
+##### 创建 texture 并设置混合模式
+
+```cpp
+---------generate_tile_map_texture();---------
+	//texture_tile_map 是在game_manager.h中进行了私有定义的，默认值为nullptr
+	texture_tile_map = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, width_map_tex, height_map_tex);
+	// SDL_PIXELFORMAT_ARGB8888 ARGB:透明度红绿蓝，8888：每个各8byte（4字节ARGB型颜色）
+			
+	SDL_SetTextureBlendMode(texture_tile_map, SDL_BLENDMODE_BLEND); // 这一步是将模式设置为混合：alpha混合模式
+```
+
+##### 替换画笔 renderer 的渲染目标（框架）
+
+```cpp
+{---------generate_tile_map_texture();---------
+    ...
+	// 将画笔renderer的渲染对象替换为地图纹理（记得最后还原）
+	SDL_SetRenderTarget(renderer, texture_tile_map);
+		....
+
+	SDL_SetRenderTarget(renderer, nullptr); // null 表示现在在window上进行着色。这一步表示还原
+
+	return true;
+}
+```
+
+##### 渲染具体对象（按需进行复制）
+
+关键函数：`SDL_RenderCopy(renderer, tex_tile_map_set, &rect_src, &rect_dst);`
+
+`renderer` 的渲染对象不在上述函数中进行赋值（即我们已经指明了其渲染对象，这一个函数只是决定怎么画和画什么）
+
+表示用 `renderer` 将 `tex_tile_map_set` 这个材质中的 `rect_src` 矩形（传入的是一个 `SDL_Rect` 地址）复制到渲染对象（画板）中的 `rect_dst` 矩形
+
+```cpp
+---------generate_tile_map_texture();---------
+	SDL_SetRenderTarget(renderer, texture_tile_map);	
+	for (int y = 0; y < ConfigManager::Instance()->map.get_height(); y++) {
+		for (int x = 0; x < ConfigManager::Instance()->map.get_width();x++) {
+            // 1. 画地皮
+			const Tile& tile_now = tile_map[y][x];
+			int terrian = tile_now.terrian;
+			const SDL_Rect& rect_src = {
+					(terrian % set_one_line_number) * SIZE_TILE,
+					(terrian / set_one_line_number) * SIZE_TILE,
+					SIZE_TILE,
+					SIZE_TILE
+				}; // 对应纹理在纹理图中的位置，并进行截取
+
+			const SDL_Rect& rect_dst = {
+					x * SIZE_TILE,
+					y * SIZE_TILE,
+					SIZE_TILE,
+					SIZE_TILE
+			}; // 生成纹理在地图中的位置
+			SDL_RenderCopy(renderer, tex_tile_map_set, &rect_src, &rect_dst); // 这里是决定将哪个地方的纹理进行复制
+
+
+			if (tile_now.decoration >= 0) {
+				// 2 . 画装饰（其也用与terrian相同的编排寻找方式）
+					...
+			}
+		}	// end internal for
+	} // end double for
+
+		
+		// 3. 画 home
+	...
+	SDL_RenderCopy(renderer, ResourcesManager::Instance()->get_texture_pool().find(ResID::Tex_Home)->second, nullptr, &rect_dst); // 这里是决定将哪个地方的纹理进行复制
+		// nullptr 表示不用裁剪
+
+	SDL_SetRenderTarget(renderer, nullptr); // null 表示现在在window上进行着色
+
+	return true;
+}
+```
+
+最终效果：
+
+![](pic\2026.5.15_2.png)
+
+终于能看到地图长什么样子了！再接再厉！
